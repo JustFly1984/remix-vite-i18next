@@ -1,4 +1,4 @@
-import { LoaderFunctionArgs, json } from "@remix-run/node";
+import { LoaderFunctionArgs, TypedResponse, json } from "@remix-run/node";
 import {
   Links,
   Meta,
@@ -13,8 +13,11 @@ import { useChangeLanguage } from "remix-i18next/react";
 
 export const handle = { i18n: ["translation"] };
 
-export async function loader({ request }: LoaderFunctionArgs) {
+export async function loader({ request }: LoaderFunctionArgs): Promise<TypedResponse<{
+  locale: string;
+}>> {
   const locale = await i18nServer.getLocale(request);
+
   return json(
     { locale },
     { headers: { "Set-Cookie": await localeCookie.serialize(locale) } },

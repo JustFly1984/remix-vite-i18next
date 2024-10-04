@@ -1,40 +1,36 @@
-import { PassThrough } from "node:stream";
+import { RemixServer } from '@remix-run/react'
+import { createInstance, type i18n } from 'i18next'
+import { type AppLoadContext, type EntryContext } from '@remix-run/node'
+import { isbot } from 'isbot'
+import ReactDOMServer from 'react-dom/server'
+import { I18nextProvider, initReactI18next } from 'react-i18next'
 
-import type { AppLoadContext, EntryContext } from "@remix-run/node";
-import { createReadableStreamFromReadable } from "@remix-run/node";
-import { RemixServer } from "@remix-run/react";
-import { isbot } from "isbot";
-import { renderToPipeableStream } from "react-dom/server";
-import { createInstance, i18n as i18next } from "i18next";
-import i18nServer from "./modules/i18n.server";
-import { I18nextProvider, initReactI18next } from "react-i18next";
-import * as i18n from "./config/i18n";
+import i18next from 'app/modules/i18n.server'
+import * as i18nConfig from 'app/config/i18n' // your i18n configuration file
 
-const ABORT_DELAY = 5_000;
+// import { Providers } from 'app/providers.tsx'
+
+const { renderToReadableStream } = ReactDOMServer
 
 export default async function handleRequest(
   request: Request,
   responseStatusCode: number,
   responseHeaders: Headers,
   remixContext: EntryContext,
-  // This is ignored so we can keep it in the template for visibility.  Feel
-  // free to delete this parameter in your app if you're not using it!
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  loadContext: AppLoadContext
-) {
-  const instance = createInstance();
-  const lng = await i18nServer.getLocale(request);
-  const ns = i18nServer.getRouteNamespaces(remixContext);
+  _loadContext: AppLoadContext
+): Promise<unknown> {
+  const instance = createInstance()
+  const lng = await i18next.getLocale(request)
+  const ns = i18next.getRouteNamespaces(remixContext)
 
-  await instance.use(initReactI18next).init({ ...i18n, lng, ns });
+  await instance.use(initReactI18next).init({ ...i18nConfig, lng, ns })
 
-  return isbot(request.headers.get("user-agent") || "")
+  return isbot(request.headers.get('user-agent'))
     ? handleBotRequest(
         request,
         responseStatusCode,
         responseHeaders,
         remixContext,
-        loadContext,
         instance
       )
     : handleBrowserRequest(
@@ -42,9 +38,8 @@ export default async function handleRequest(
         responseStatusCode,
         responseHeaders,
         remixContext,
-        loadContext,
         instance
-      );
+      )
 }
 
 async function handleBotRequest(
@@ -52,53 +47,15 @@ async function handleBotRequest(
   responseStatusCode: number,
   responseHeaders: Headers,
   remixContext: EntryContext,
-  _loadContext: AppLoadContext,
-  i18next: i18next
-) {
-  return new Promise((resolve, reject) => {
-    let shellRendered = false;
-    const { pipe, abort } = renderToPipeableStream(
-      <I18nextProvider i18n={i18next}>
-        <RemixServer
-          context={remixContext}
-          url={request.url}
-          abortDelay={ABORT_DELAY}
-        />
-      </I18nextProvider>,
-      {
-        onAllReady() {
-          shellRendered = true;
-          const body = new PassThrough();
-          const stream = createReadableStreamFromReadable(body);
-
-          responseHeaders.set("Content-Type", "text/html");
-
-          resolve(
-            new Response(stream, {
-              headers: responseHeaders,
-              status: responseStatusCode,
-            })
-          );
-
-          pipe(body);
-        },
-        onShellError(error: unknown) {
-          reject(error);
-        },
-        onError(error: unknown) {
-          responseStatusCode = 500;
-          // Log streaming rendering errors from inside the shell.  Don't log
-          // errors encountered during initial shell rendering since they'll
-          // reject and get logged in handleDocumentRequest.
-          if (shellRendered) {
-            console.error(error);
-          }
-        },
-      }
-    );
-
-    setTimeout(abort, ABORT_DELAY);
-  });
+  i18next: i18n
+): Promise<unknown> {
+  return handleRequestInternal(
+    request,
+    responseStatusCode,
+    responseHeaders,
+    remixContext,
+    i18next
+  )
 }
 
 async function handleBrowserRequest(
@@ -106,51 +63,46 @@ async function handleBrowserRequest(
   responseStatusCode: number,
   responseHeaders: Headers,
   remixContext: EntryContext,
-  _loadContext: AppLoadContext,
-  i18next: i18next
-) {
-  return new Promise((resolve, reject) => {
-    let shellRendered = false;
-    const { pipe, abort } = renderToPipeableStream(
-      <I18nextProvider i18n={i18next}>
-        <RemixServer
-          context={remixContext}
-          url={request.url}
-          abortDelay={ABORT_DELAY}
-        />
-      </I18nextProvider>,
-      {
-        onShellReady() {
-          shellRendered = true;
-          const body = new PassThrough();
-          const stream = createReadableStreamFromReadable(body);
+  i18next: i18n
+): Promise<unknown> {
+  return handleRequestInternal(
+    request,
+    responseStatusCode,
+    responseHeaders,
+    remixContext,
+    i18next
+  )
+}
 
-          responseHeaders.set("Content-Type", "text/html");
+async function handleRequestInternal(
+  request: Request,
+  responseStatusCode: number,
+  responseHeaders: Headers,
+  remixContext: EntryContext,
+  i18next: i18n
+): Promise<unknown> {
+  try {
+    const stream = await renderToReadableStream(
+        <I18nextProvider i18n={i18next}>
+          <RemixServer context={remixContext} url={request.url} />
+        </I18nextProvider>
+    )
 
-          resolve(
-            new Response(stream, {
-              headers: responseHeaders,
-              status: responseStatusCode,
-            })
-          );
+    responseHeaders.set('Content-Type', 'text/html')
 
-          pipe(body);
-        },
-        onShellError(error: unknown) {
-          reject(error);
-        },
-        onError(error: unknown) {
-          responseStatusCode = 500;
-          // Log streaming rendering errors from inside the shell.  Don't log
-          // errors encountered during initial shell rendering since they'll
-          // reject and get logged in handleDocumentRequest.
-          if (shellRendered) {
-            console.error(error);
-          }
-        },
-      }
-    );
+    return new Response(stream, {
+      headers: responseHeaders,
+      status: responseStatusCode,
+    })
+  } catch (error) {
+    if (error instanceof Error) {
+      console.error(error)
+    } else if (typeof error === 'string') {
+      console.error(new Error(error))
+    } else {
+      console.error(new Error(JSON.stringify(error)))
+    }
 
-    setTimeout(abort, ABORT_DELAY);
-  });
+    return new Response('Internal Server Error', { status: 500 })
+  }
 }
