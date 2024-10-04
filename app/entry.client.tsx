@@ -38,11 +38,11 @@ async function main() {
   startTransition(() => {
     hydrateRoot(
       document,
-      <I18nextProvider i18n={i18next}>
         <StrictMode>
-          <RemixBrowser />
+          <I18nextProvider i18n={i18next}>
+            <RemixBrowser />
+          </I18nextProvider>
         </StrictMode>
-      </I18nextProvider>
     );
   });
 }

@@ -8,8 +8,6 @@ import { I18nextProvider, initReactI18next } from 'react-i18next'
 import i18next from 'app/modules/i18n.server'
 import * as i18nConfig from 'app/config/i18n' // your i18n configuration file
 
-// import { Providers } from 'app/providers.tsx'
-
 const { renderToReadableStream } = ReactDOMServer
 
 export default async function handleRequest(
